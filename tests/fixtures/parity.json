@@ -1,0 +1,17 @@
+[
+  {
+    "file": "alpha.c",
+    "fns": [
+      { "function": "a_one", "rust_status": "active", "preprocessor_status": "compiled", "rust_module": "alpha" },
+      { "function": "a_two", "rust_status": "active", "preprocessor_status": "compiled", "rust_module": "alpha" },
+      { "function": "a_dead", "rust_status": "doc_only", "preprocessor_status": "config_disabled" }
+    ]
+  },
+  {
+    "file": "beta.c",
+    "fns": [
+      { "function": "b_one", "rust_status": "active", "preprocessor_status": "compiled", "rust_module": "beta" },
+      { "function": "b_two", "rust_status": "missing", "preprocessor_status": "compiled" }
+    ]
+  }
+]

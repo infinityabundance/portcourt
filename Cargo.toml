@@ -1,3 +1,6 @@
+[workspace]
+members = ["xtask"]
+
 [package]
 name = "portcourt"
 version = "0.1.0"
@@ -5,7 +8,8 @@ edition = "2021"
 license = "Apache-2.0"
 description = "A general C->Rust port evidence court: closure-math claim verification (a module's stated completeness must be backed by the parity/evidence views, or the build fails) plus per-function `explain`. Consumes the same port-index / claim-ladder views any faithful C->Rust port produces."
 repository = "https://github.com/infinityabundance/portcourt"
-keywords = ["port", "parity", "verification", "c-to-rust", "evidence"]
+readme = "README.md"
+keywords = ["port", "parity", "verification", "evidence", "audit"]
 categories = ["development-tools"]
 
 [[bin]]

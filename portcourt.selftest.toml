@@ -1,0 +1,11 @@
+# portcourt self-test config (used by `xtask gate`): a tiny synthetic parity view proving the closure math.
+# alpha.c is `complete` even though it has a doc-only mention of a config-disabled function (benign).
+# beta.c is `partial` at 50% (1 of 2 compiled functions ported), meeting its 50% floor.
+parity = "tests/fixtures/parity.json"
+
+[module."alpha.c"]
+claim = "complete"
+
+[module."beta.c"]
+claim = "partial"
+min_parity = 50.0

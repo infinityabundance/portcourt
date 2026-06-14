@@ -200,19 +200,28 @@ fn cmd_check(config_path: &Path) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    // A court is "sealed" iff the claim ladder records a `sealed_version` for it. We pre-index the sealed
+    // court ids into a set so the per-module `requires` loop below is an O(1) membership test rather than a
+    // linear scan of the ladder for every required court.
     let sealed: std::collections::BTreeSet<&str> = ladder
         .courts
         .iter()
         .filter(|c| c.sealed_version.is_some())
         .map(|c| c.id.as_str())
         .collect();
+    // Index the parity view by C file name so each declared module resolves to its evidence in O(1).
     let by_file: BTreeMap<&str, &FileParity> = parity.iter().map(|f| (f.file.as_str(), f)).collect();
 
+    // `violations` accumulates every way a claim out-ran its evidence; a non-empty list is a failed gate.
+    // We collect them all (rather than bailing on the first) so one run reports every problem at once.
     let mut violations: Vec<String> = Vec::new();
     let mut checked = 0usize;
 
     println!("portcourt check — closure math over {} declared module(s)\n", cfg.module.len());
+    // BTreeMap iteration is sorted by file name, so the report is stable/deterministic run-to-run.
     for (file, claim) in &cfg.module {
+        // (0) The module must actually exist in the parity view. Declaring a claim for a file the evidence
+        //     does not even contain is itself an over-claim — you cannot vouch for what you cannot see.
         let fp = match by_file.get(file.as_str()) {
             Some(f) => *f,
             None => {
@@ -221,11 +230,19 @@ fn cmd_check(config_path: &Path) -> ExitCode {
             }
         };
         checked += 1;
+        // Tally the four port states for this module once; every rule below reads from this single count.
         let t = Tally::of(fp);
         let pct = t.pct();
+        // `module_ok` flips to false on the first broken rule; `notes` records the human-readable reasons so
+        // they can be printed inline under the module AND lifted into the global `violations` list.
         let mut module_ok = true;
         let mut notes: Vec<String> = Vec::new();
 
+        // (1) The completeness rule. A module that says `claim = "complete"` is asserting that EVERY
+        //     compiled C function has a real Rust `fn` and that no compiled function is merely *named* in a
+        //     comment (a doc-only false hit inflates the apparent count without being a port). Note we use
+        //     `doc_only_live` (doc-only on *compiled* functions) — a doc-only mention of a `#if 0`/
+        //     config-disabled function is benign and must not break a true 100%.
         if claim.claim.as_deref() == Some("complete") {
             if !t.is_complete() {
                 module_ok = false;
@@ -235,12 +252,19 @@ fn cmd_check(config_path: &Path) -> ExitCode {
                 ));
             }
         }
+        // (2) The parity-floor rule. An optional `min_parity` lets a *partial* module still assert a lower
+        //     bound ("at least 60% ported"). The `1e-9` slack absorbs floating-point rounding so a module
+        //     sitting exactly on the floor is not failed by a representation artefact.
         if let Some(min) = claim.min_parity {
             if pct + 1e-9 < min {
                 module_ok = false;
                 notes.push(format!("parity {pct:.1}% is below the required {min:.1}%"));
             }
         }
+        // (3) The dependency rule — the heart of "closure math". A module may declare the courts its claim
+        //     RESTS ON (`requires`). Each such court must be sealed; if a court is still open, the claim is
+        //     standing on evidence that does not yet exist, so the gate fails. This is what stops a port
+        //     from quoting a green lower-court result as proof of a higher-court claim.
         for court in &claim.requires {
             if !sealed.contains(court.as_str()) {
                 module_ok = false;
@@ -313,6 +337,9 @@ fn cmd_explain(name: &str, config_path: &Path) -> ExitCode {
     };
     let ladder = load_courts(&cfg, &base).unwrap_or_default();
 
+    // Scan every module for a C function of this exact name. A name can in principle appear in more than
+    // one translation unit (e.g. a `static` helper reused across files), so we collect ALL hits and report
+    // each, rather than assuming a single match.
     let mut hits: Vec<(&str, &FnEntry)> = Vec::new();
     for fp in &parity {
         for f in &fp.fns {
@@ -321,11 +348,17 @@ fn cmd_explain(name: &str, config_path: &Path) -> ExitCode {
             }
         }
     }
+    // A name absent from the parity view is not a C function in any covered module — exit non-zero so
+    // `explain` can be used as a guard ("does this symbol exist?") in a script.
     if hits.is_empty() {
         println!("portcourt explain `{name}`: not found in the parity view (not a C function in any covered module).");
         return ExitCode::FAILURE;
     }
     for (file, f) in &hits {
+        // Translate the raw parity status into a human verdict. The four states are mutually exclusive per
+        // function: a real Rust `fn` (PORTED), no port at all (MISSING), a name that only shows up in a
+        // comment (DOC-ONLY — counted nowhere as a port, and a false hit to be reworded), or a C function
+        // behind `#if 0` that was never a port target in the first place (DISABLED).
         let status = match f.rust_status.as_str() {
             "active" | "inactive" | "test" => "PORTED",
             "missing" => "MISSING (no Rust fn)",
@@ -339,7 +372,10 @@ fn cmd_explain(name: &str, config_path: &Path) -> ExitCode {
         if let Some(m) = &f.rust_module {
             println!("  module: {m} (Rust)");
         }
-        // Courts whose `proven` prose references this function by name.
+        // Surface any court that VOUCHES for this function — i.e. whose `proven` prose names it. This is a
+        // deliberately loose substring match (a court describes its evidence in prose, not as a symbol
+        // list), so it answers "what, if anything, certifies this function?" at a glance. A function can be
+        // ported yet uncertified (no court names it); that is exactly the gap a reviewer wants to see.
         let refs: Vec<&str> = ladder
             .courts
             .iter()
@@ -373,13 +409,19 @@ fn cmd_next(file_filter: Option<&str>, config_path: &Path) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    // `any` tracks whether we printed a single work item; if nothing is missing anywhere (or in the chosen
+    // file) we say so explicitly rather than printing an empty list, so the absence of output is never
+    // ambiguous ("did it run?").
     let mut any = false;
     for fp in &parity {
+        // An optional file filter narrows the worklist to one module; without it, every module is listed.
         if let Some(filt) = file_filter {
             if fp.file != filt {
                 continue;
             }
         }
+        // Two distinct kinds of work: `missing` functions need a real port; `doc_only` hits need the comment
+        // that names them reworded (they are false hits inflating nothing, but they muddy the parity view).
         let missing: Vec<&str> = fp
             .fns
             .iter()
@@ -432,6 +474,9 @@ fn cmd_report(config_path: &Path) -> ExitCode {
     };
     println!("{:<16} {:>7}  {:>6} {:>7} {:>8} {:>8}", "module", "parity", "ported", "missing", "doc-only", "disabled");
     println!("{}", "-".repeat(60));
+    // Running totals across every module, so the final row is the whole port at a glance. We sum the raw
+    // per-file counts (not the percentages) and re-derive the overall percentage from the summed counts —
+    // averaging per-file percentages would mis-weight small files against large ones.
     let (mut tp, mut tm, mut td, mut tx) = (0u32, 0u32, 0u32, 0u32);
     for fp in &parity {
         let t = Tally::of(fp);
@@ -472,13 +517,20 @@ fn usage() -> ExitCode {
 }
 
 fn main() -> ExitCode {
+    // Hand-rolled arg parsing (no clap dependency): the surface is tiny and the grammar is regular, so a
+    // match over the first token plus a couple of positional operands is clearer than a parser framework.
+    // The process exit code IS the gate result — `check` returns non-zero on any over-claim — so portcourt
+    // drops straight into a Makefile / CI step / git hook with no wrapper.
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // Every subcommand resolves its config from the last positional, defaulting to ./portcourt.toml.
     let default_cfg = PathBuf::from("portcourt.toml");
     match args.first().map(String::as_str) {
+        // `check [config]` — config is the only (optional) operand.
         Some("check") => {
             let cfg = args.get(1).map(PathBuf::from).unwrap_or(default_cfg);
             cmd_check(&cfg)
         }
+        // `explain <fn> [config]` — the function name is required; the config is optional after it.
         Some("explain") => match args.get(1) {
             Some(name) => {
                 let cfg = args.get(2).map(PathBuf::from).unwrap_or(default_cfg);
@@ -486,8 +538,12 @@ fn main() -> ExitCode {
             }
             None => usage(),
         },
+        // `next [file] [config]` — BOTH operands are optional, which is ambiguous when only one is given:
+        // is `portcourt next foo.toml` asking to filter to a file literally named "foo.toml", or to use
+        // that file as the config? We disambiguate by extension: a single `.toml` operand is the config
+        // (the overwhelmingly common intent); a single non-`.toml` operand is a file filter using the
+        // default config. Two operands are unambiguous: `<file> <config>`.
         Some("next") => {
-            // `next [file] [config]` — both optional; a trailing `.toml` is the config, not a file filter.
             let (file, cfg) = match (args.get(1), args.get(2)) {
                 (Some(a), Some(b)) => (Some(a.as_str()), PathBuf::from(b)),
                 (Some(a), None) if a.ends_with(".toml") => (None, PathBuf::from(a)),
@@ -496,10 +552,12 @@ fn main() -> ExitCode {
             };
             cmd_next(file, &cfg)
         }
+        // `report [config]` — config is the only (optional) operand.
         Some("report") => {
             let cfg = args.get(1).map(PathBuf::from).unwrap_or(default_cfg);
             cmd_report(&cfg)
         }
+        // Anything else (including `--help`, no args, or a typo) prints usage and exits non-zero.
         _ => usage(),
     }
 }
