@@ -92,3 +92,40 @@ fn next_lists_missing_functions() {
     assert!(ok);
     assert!(out.contains("b_two"), "next should list the missing fn:\n{out}");
 }
+
+// --- The shipped examples/ fixtures: these are the demo, so they must behave exactly as documented. ---
+
+fn run_example(args: &[&str]) -> (bool, String) {
+    // Run against the real examples/ configs from the crate root (paths in those configs are relative).
+    let mut v: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    let out = std::process::Command::new(bin()).args(&v.drain(..).collect::<Vec<_>>()).current_dir(root()).output().unwrap();
+    (out.status.success(), String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+#[test]
+fn example_honest_config_passes() {
+    let (ok, out) = run_example(&["check", "examples/honest.toml"]);
+    assert!(ok, "examples/honest.toml must pass:\n{out}");
+    assert!(out.contains("PASS"), "{out}");
+}
+
+#[test]
+fn example_overclaim_config_fails_with_both_reasons() {
+    let (ok, out) = run_example(&["check", "examples/overclaim.toml"]);
+    assert!(!ok, "examples/overclaim.toml must fail (exit non-zero):\n{out}");
+    // The unsealed-court dependency and the complete-with-missing over-claim are both caught.
+    assert!(out.contains("not sealed"), "expected the unsealed-court violation:\n{out}");
+    assert!(out.contains("over-claim"), "expected the completeness over-claim:\n{out}");
+}
+
+#[test]
+fn doc_only_distinction_compiled_fails_disabled_is_benign() {
+    // alpha.c's a_legacy is a config-disabled doc-only (benign) -> alpha can be `complete`.
+    // beta.c's b_flush is a COMPILED doc-only (a false hit) -> beta cannot be `complete`.
+    // honest.toml exercises both (alpha complete passes; beta is only partial), and it passes overall;
+    // overclaim.toml makes beta claim complete and is therefore rejected. Together they pin the rule.
+    let (honest_ok, _) = run_example(&["check", "examples/honest.toml"]);
+    let (over_ok, over) = run_example(&["check", "examples/overclaim.toml"]);
+    assert!(honest_ok, "alpha `complete` with a config-disabled doc-only must pass");
+    assert!(!over_ok && over.contains("over-claim"), "beta `complete` with a compiled doc-only must fail:\n{over}");
+}

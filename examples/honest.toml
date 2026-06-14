@@ -1,0 +1,16 @@
+# An HONEST claim set over examples/parity.min.json — `portcourt check examples/honest.toml` PASSES.
+#
+# alpha.c is genuinely complete: its only non-ported entry (a_legacy) is a #if 0 / config-disabled C
+# function, so its doc-only mention is benign. Its claim rests on COURT.ALPHA.1, which is sealed.
+# beta.c is honestly partial: it has a missing function (b_write) and a doc-only false hit on a compiled
+# function (b_flush), so it is 33.3% — above its declared 30% floor, and it does not claim complete.
+parity = "parity.min.json"
+courts = "claim-ladder.min.json"
+
+[module."alpha.c"]
+claim = "complete"
+requires = ["COURT.ALPHA.1"]
+
+[module."beta.c"]
+claim = "partial"
+min_parity = 30.0

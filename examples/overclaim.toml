@@ -1,0 +1,14 @@
+# An OVER-CLAIM set over the same parity view — `portcourt check examples/overclaim.toml` FAILS (exit 1).
+# Three distinct over-claims, each caught by closure math:
+#   1. alpha.c `requires` COURT.BETA.OPEN, which has no sealed_version (an unsealed court).
+#   2. beta.c claims `complete` but has a missing compiled function (b_write).
+#   3. beta.c also has a doc-only false hit on a compiled function (b_flush) — inflation, not a port.
+parity = "parity.min.json"
+courts = "claim-ladder.min.json"
+
+[module."alpha.c"]
+claim = "complete"
+requires = ["COURT.BETA.OPEN"]
+
+[module."beta.c"]
+claim = "complete"

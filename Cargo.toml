@@ -3,7 +3,7 @@ members = ["xtask"]
 
 [package]
 name = "portcourt"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license = "Apache-2.0"
 description = "A general C->Rust port evidence court: closure-math claim verification (a module's stated completeness must be backed by the parity/evidence views, or the build fails) plus per-function `explain`. Consumes the same port-index / claim-ladder views any faithful C->Rust port produces."

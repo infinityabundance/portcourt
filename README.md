@@ -20,6 +20,22 @@ It consumes the parity view a port already produces — the typed join of every 
 
 The full per-command reference is generated into [`docs/CLI.md`](docs/CLI.md).
 
+## 60-second demo
+
+The [`examples/`](examples/) directory has a tiny self-contained port — a parity view ([`parity.min.json`](examples/parity.min.json)), a claim ladder ([`claim-ladder.min.json`](examples/claim-ladder.min.json)), an honest claim set ([`honest.toml`](examples/honest.toml)), and an over-claim set ([`overclaim.toml`](examples/overclaim.toml)). The money shot:
+
+```text
+$ portcourt check examples/overclaim.toml
+  [FAIL] alpha.c        100.0%  ported   2  missing   0  doc-only  1  (1 required court(s))
+         - requires court `COURT.BETA.OPEN` which is not sealed
+  [FAIL] beta.c          33.3%  ported   1  missing   1  doc-only  1  (0 required court(s))
+         - claims `complete` but has 1 missing + 1 doc-only on compiled functions (over-claim)
+
+PORTCOURT: FAIL — 2 over-claim(s):
+```
+
+The full, live-captured transcript (report / next / explain / check on both honest and over-claim configs) is generated into [`examples/TRANSCRIPT.md`](examples/TRANSCRIPT.md) — it is the tool's real output, staleness-gated so it cannot lie.
+
 ## Config (`portcourt.toml`)
 
 ```toml
