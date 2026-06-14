@@ -1,0 +1,21 @@
+[package]
+name = "portcourt"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "A general C->Rust port evidence court: closure-math claim verification (a module's stated completeness must be backed by the parity/evidence views, or the build fails) plus per-function `explain`. Consumes the same port-index / claim-ladder views any faithful C->Rust port produces."
+repository = "https://github.com/infinityabundance/portcourt"
+keywords = ["port", "parity", "verification", "c-to-rust", "evidence"]
+categories = ["development-tools"]
+
+[[bin]]
+name = "portcourt"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+[lints.rust]
+unsafe_code = "forbid"
